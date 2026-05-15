@@ -1,0 +1,36 @@
+{{> layout/header}}
+<div class="container p-5 flex-grow-1">
+    <div class="card">
+        <div class="card-header"><b>회원가입을해주세요</b></div>
+        <div class="card-body">
+            <!--
+            중요!!
+            파일 업로드 사용시 method (POST)
+            enctype="multipart/form-data" 설정 필요
+            설정 안 하면 서버에서 받을 수 없음
+            form 태그 사용시
+            -->
+            <form action="/join" method="post" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <input type="text" class="form-control" placeholder="enter username" name="username" value="cos5">
+                </div>
+                <div class="mb-3">
+                    <input type="password" class="form-control" placeholder="enter password" name="password" value="1234">
+                </div>
+                <div class="mb-3">
+                    <input type="email" class="form-control" placeholder="enter email" name="email" value="aa@naver.com">
+                </div>
+                <!-- 프로필 등록 필드 (선택사항) -->
+                <div class="mb-3">
+                    <label for="profileImage" class="form-label">프로필 사진(선택 사항)</label>
+                    <input type="file" id="profileImage" class="form-control" name="profileImage" accept="image/*">
+                    <small class="form-text text-muted">이미지 파일만 업로드 가능합니다(JPG, PNG, GIF 등)</small>
+                    <small class="form-text text-muted d-block mt-1">⭐ 프로필 사진을 등록 하지 않아도 회원가입 가능</small>
+                </div>
+                <button type="submit" class="btn btn-primary form-control">회원가입</button>
+            </form>
+        </div>
+    </div>
+</div>
+{{> layout/footer}}
+
