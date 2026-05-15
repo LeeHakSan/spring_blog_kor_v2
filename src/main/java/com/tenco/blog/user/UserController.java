@@ -6,10 +6,19 @@ import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 
@@ -20,17 +29,99 @@ public class UserController {
 
     private final UserService userService;
 
-//     초기 파라미터 값을 가져오는 방법
+    //     초기 파라미터 값을 가져오는 방법
     @Value("${oauth.kakao.client-id}")
     private String kakaoClientId;
     @Value("${oauth.kakao.client-secret}")
     private String kakaoClientSecret;
 
     @PostConstruct
-        public void init() {
-            log.info("현재 적용된 클라이언트 아이디 확인" + kakaoClientId);
-            log.info("현재 적용된 클라이언트 시크릿 확인" +  kakaoClientSecret);
+    public void init() {
+        log.info("현재 적용된 클라이언트 아이디 확인" + kakaoClientId);
+        log.info("현재 적용된 클라이언트 시크릿 확인" + kakaoClientSecret);
+    }
+
+    // 1. 인가 코드 받음 2. 토큰 발급 요청(JWT - CSR)
+    @GetMapping("/kakao-redirect")
+    public String kakaoCallBack(@RequestParam(name = "code") String code, HttpSession session) {
+        System.out.println("카카오 리다이렉트 값 확인 : ");
+        RestTemplate restTemplate1 = new RestTemplate();
+
+        HttpHeaders headers1 = new HttpHeaders();
+        headers1.add("Content-Type", "application/x-www-form-urlencoded;charset=utf-8");
+
+        // 바디
+        // 1. 방식 - application/json
+        // 2. 방식 - application/x-www-form-urlencoded
+        // {key=value, key=value, key=value} -> LinkedMultiValueMap -> 장점 URL인코딩을 알아서 해줌
+        LinkedMultiValueMap<String, String> multiValueMap = new LinkedMultiValueMap();
+        multiValueMap.add("grant_type", "authorization_code");
+        multiValueMap.add("client_id", kakaoClientId);
+        multiValueMap.add("redirect_uri", "http://localhost:8080/kakao-redirect");
+        multiValueMap.add("code", code);
+        // 최신사항 : 반드시 시크릿키 body에 설정 해야함
+        multiValueMap.add("client_secret", kakaoClientSecret);
+
+
+        // 바디 + 헤더 결합 (Http 요청 메세지 구축) --> 순서 중요
+        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity(multiValueMap, headers1);
+
+        ResponseEntity<UserResponse.OAuthToken> response1 = restTemplate1.exchange(
+                "https://kauth.kakao.com/oauth/token",
+                HttpMethod.POST,
+                request,
+                UserResponse.OAuthToken.class
+        );
+
+//        System.out.println(response1.getBody().getAccessToken());
+//        System.out.println(response1.getBody().getScope());
+//        System.out.println(response1.getBody().getTokenType());
+        ////////////////////////////////////////////////////////////
+        // 발급 받은 액세스 토큰으로 해당 사용자의 정보 요청
+        String accessToken = response1.getBody().getAccessToken();
+        RestTemplate restTemplate2 = new RestTemplate();
+
+        HttpHeaders headers2 = new HttpHeaders();
+        // 주의 반드시 Bearer + 공백 한 칸 + 토큰
+        headers2.add("Authorization", "Bearer " + accessToken);
+        headers2.add("Content-Type", "application/x-www-form-urlencoded;charset=utf-8");
+
+        HttpEntity request2 = new HttpEntity(headers2);
+
+        // HTTP 요청 2
+        ResponseEntity<UserResponse.KakaoProfile> response2 = restTemplate2.exchange(
+                "https://kapi.kakao.com/v2/user/me",
+                HttpMethod.POST,
+                request2,
+                UserResponse.KakaoProfile.class
+        );
+
+        System.out.println(response2.getStatusCode());
+        System.out.println(response2.getBody().toString());
+        System.out.println(response2.getHeaders().toString());
+
+        // 소셜 가입자 닉네임 형태 결정
+        UserResponse.KakaoProfile.KakaoAccount.Profile profile = response2.getBody().getKakaoAccount().getProfile();
+        String username = profile.getNickname() + "_" + response2.getBody().getId();
+        User userEntity = userService.사용자이름조회(username);
+
+        if (userEntity == null) {
+            // 최초 사용자 자동 회원가입
+            System.out.println("최초 사용자");
+            UserRequest.JoinDTO joinDTO = new UserRequest.JoinDTO();
+            joinDTO.setUsername(username);
+            joinDTO.setEmail(null);
+            joinDTO.setPassword("aaaa");
+//            joinDTO.setProfileImage();
+            userEntity = userService.회원가입(joinDTO);
+            userEntity.setProfileImage(profile.getProfileImageUrl());
+
         }
+
+        session.setAttribute(Define.SESSION_USER, userEntity);
+
+        return "redirect:/board/list";
+    }
 
     // 프로필 이미지 삭제 요청
     @PostMapping("/user/profile-image/delete")
